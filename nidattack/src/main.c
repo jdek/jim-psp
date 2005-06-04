@@ -29,7 +29,6 @@ A million repetitions of "a"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <stdlib.h>
 
 typedef struct {
 	unsigned long state[5];
@@ -275,7 +274,6 @@ int load_hash_list(char *filename)
 	hash_count = 0;
 	while (fscanf(fp, "0x%x\n", &t) == 1)
 		hash_count++;
-printf("hash_count = %d\n", hash_count);
 	fseek(fp, 0, SEEK_SET);
 	hash = malloc(hash_count * sizeof(unsigned int));
 	i = 0;
@@ -293,25 +291,24 @@ int load_dictionary(char *filename)
 	if ((fp = fopen(filename, "rt")) == NULL)
 		return -1;
 	dict_count = 0;
-	while (fscanf(fp, "%s\n", buffer) != EOF)
+	while (fscanf(fp, "%s\n", &buffer) != EOF)
 		dict_count++;
-printf("dict_count = %d\n", dict_count);
 	fseek(fp, 0, SEEK_SET);
 	dict = (char **) malloc(dict_count * sizeof(char *));
 	dict_member_length = malloc(dict_count);
 	i = 0;
-	while (fscanf(fp, "%s\n", buffer) == 1) {
+	while (fscanf(fp, "%s\n", &buffer) == 1) {
 		if ((buffer[0] == '-') || (buffer[0] == '/')) {	// This handles comments in the dic file
 		} else {				// Not a comment, so do duplicate check
 			int count;
 			int found = 0;
 			for (count = 0; count < (i - 1); count++)
-				if (strcmp(buffer, dict[count]) == 0)
+				if (strcmp(&buffer, dict[count]) == 0)
 					found = 1;
 			if (found == 0) {	// If not already in dictionary, then add
-				dict_member_length[i] = strlen(buffer);
+				dict_member_length[i] = strlen(&buffer);
 				dict[i] = malloc(dict_member_length[i] + 1);
-				strcpy(dict[i], buffer);
+				strcpy(dict[i], &buffer);
 				i++;
 			}
 		}
@@ -329,11 +326,11 @@ FILE *fout;
 // what we do, is pre-sort the hashlist, so they are in order AABBCCDD
 // Then index each byte into the list, hence cutting down the search space considerably
 typedef struct {
-	int number;
-	int next[256];
+	unsigned int number;
+	unsigned int next[256];
 } search_space_t2;
 typedef struct {
-	int number;
+	unsigned int number;
 	search_space_t2 next[256];
 } search_space_t;
 search_space_t searchtable[256];
@@ -385,21 +382,21 @@ void fillsearchtable()
 						if ((hash[hashpos3] & 0xffffff00) == searchval) {
 							searchtable[count].next[count2].next[count3] = hashpos3;
 						} else {	// Higher number
-							searchtable[count].next[count2].next[count3] = -1;
+							searchtable[count].next[count2].next[count3] = 0;
 						}
 					}
 				} else {		// Higher number
-					searchtable[count].next[count2].number = -1;
+					searchtable[count].next[count2].number = 0;
 					for (count3 = 0; count3 < 256; count3++)
-						searchtable[count].next[count2].next[count3] = -1;
+						searchtable[count].next[count2].next[count3] = 0;
 				}
 			}
 		} else {				// Higher number
 			searchtable[count].number = 0;
 			for (count2 = 0; count2 < 256; count2++) {
-				searchtable[count].next[count2].number = -1;
+				searchtable[count].next[count2].number = 0;
 				for (count3 = 0; count3 < 256; count3++)
-					searchtable[count].next[count2].next[count3] = -1;
+					searchtable[count].next[count2].next[count3] = 0;
 			}
 		}
 	}
@@ -412,22 +409,19 @@ int findhash(char *buffer, SHA1_CTX * context, int size, int prefixlen)
 	unsigned int index1 = (hashvalue & 0xff000000) >> 24;
 	unsigned int index2 = (hashvalue & 0x00ff0000) >> 16;
 	unsigned int index3 = (hashvalue & 0x0000ff00) >> 8;
-	int pos;
+	unsigned int pos;
 	// Get threebyte position
 	pos = searchtable[index1].next[index2].next[index3];
 
-	if (pos != -1) {				// Found a position, so search from here
+	if (pos != 0) {				// Found a position, so search from here
 		for (h = pos; h < hash_count; h++) {
-			if (hashvalue >= hash[h]) {
+			if (hashvalue >= hash[h])
 				if (hashvalue == hash[h]) {	// If equal, found
 					printf("Found : %-40s 0x%08x\n", buffer, hashvalue);
 					fprintf(fout, "<FUNC><NAME>%s</NAME><NID>0x%08x</NID></FUNC>\n", buffer, hashvalue);
-					fflush(stdout);
-					fflush(fout);
 					return 1;
 				} else			// If not, reject as above
 					return 0;
-			}
 		}
 	}
 	return 0;
@@ -435,45 +429,41 @@ int findhash(char *buffer, SHA1_CTX * context, int size, int prefixlen)
 
 int main(int argc, char **argv)
 {
-	int i; // , j, h;
-	int x, y, z, zz; // , z2;
+	int i, j, h;
+	int x, y, z, zz, z2;
 	SHA1_CTX context;
 	char buffer[0x200];
 	time_t start, end;
 	int colisiones;
 
-	char *ptr, *ptr0, *ptr1, *ptr2, *ptr3; // , *ptr4;
+	char *ptr, *ptr0, *ptr1, *ptr2, *ptr3, *ptr4;
 
-	char *prefix = "";
-	int prefixlen = 0;
+	char *prefix;
+	int prefixlen;
 
 	printf("SHA1 hash dictionary attack v1.0 by adresd\n");
 	printf("based on the original by djhuevo\n");
 
-	if (argc < 3) {
-		printf("usage:\n\t%s <hash_list> <dictionary> [prefix]\n", argv[0]);
+	if (argc < 4) {
+		printf("usage:\n\t%s <prefix> <hash_list> <dictionary>\n", argv[0]);
 		return 1;
 	}
+	prefix = argv[1];
+	strcpy(buffer, prefix);
+	prefixlen = strlen(prefix);
 
-	if (load_hash_list(argv[1]) < 0) {
-		fprintf(stderr, "can't open the hash file %s\n", argv[1]);
+	if (load_hash_list(argv[2]) < 0) {
+		fprintf(stderr, "can't open the file %s", argv[2]);
 		return 2;
 	}
 
-	if (load_dictionary(argv[2]) < 0) {
-		fprintf(stderr, "can't open the dictionary file %s\n", argv[2]);
+	if (load_dictionary(argv[3]) < 0) {
+		fprintf(stderr, "can't open the file %s", argv[3]);
 		return 3;
 	}
 
-	if (argc > 3) {
-		prefix = argv[3];
-		strcpy(buffer, prefix);
-		prefixlen = strlen(prefix);
-	}
-
 	if (hash_count < 1 || dict_count < 1) {
-		fprintf(stderr, "error on input data.\n");
-		fprintf(stderr, "hash_count = %d, dict_count = %d\n", hash_count, dict_count);
+		fprintf(stderr, "error on input data.");
 		return 4;
 	}
 
@@ -482,16 +472,15 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
-	printf("\nprefix : '%s'\n", prefix != "" ? prefix : "<None>");
+	printf("\nprefix : '%s'\n", prefix);
 	printf("hash count : %d\n", hash_count);
 	printf("dictionary words: %d\n\n", dict_count);
 
 	fillsearchtable();
 
 	printf("\nsearching...\n\n");
-	fflush(stdout);
 	time(&start);
-	ptr = buffer + prefixlen;
+	ptr = buffer + strlen(prefix);
 	colisiones = 0;
 	// First Word
 	for (x = 0; x < dict_count; x++) {
@@ -501,7 +490,6 @@ int main(int argc, char **argv)
 		}
 		*(ptr0) = 0;
 		printf("// processing word: %s\n", buffer);
-		fflush(stdout);
 		// Second word
 		for (y = 0; y < dict_count; y++) {
 			ptr1 = ptr0;
@@ -556,9 +544,7 @@ int main(int argc, char **argv)
 		findhash(buffer, &context, ptr0 - buffer, prefixlen);
 	}
 	time(&end);
-	printf("\n\nhash count : %d\n", hash_count);
-	printf("dictionary words: %d\n\n", dict_count);
-	printf("\n\ntime : %f seconds.", difftime(end, start));
+	printf("\n\ntime : %d seconds.", difftime(end, start));
 
 	fclose(fout);
 	return 0;

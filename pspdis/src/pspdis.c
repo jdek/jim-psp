@@ -15,22 +15,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <vector>
-#include <map>
 #include "pspdis.h"
 #include "pspelf.h"
 #include "../libopcodes/dis-asm.h"
 #include "libopcodes_helper.h"
 #include "util.h"
 
-typedef std::map<u32, std::vector<u32> > xref_type;
-
 int main(int argc, char *argv[]) {
 	FILE *in;
 	elfHeader *header = NULL;
 	sectionHeader *sHeaders = NULL;
 	u8 *elfData;
-	char elfType[32];
+	u8 elfType[32];
 	u8 *sectionStringTable = NULL;
 	u8 *elfStringTable = NULL;
 	u8 *libStub = NULL;
@@ -38,13 +34,11 @@ int main(int argc, char *argv[]) {
 	u8 *sceResident = NULL;
 	u8 *text = NULL;
 	u32 textSize = 0;
-	sectionHeader * textSection = NULL;
 	u32 *sceNid = NULL;
 	u32 i;
 	size_t elfDataSize = 0;
 	SceModuleInfo *moduleInfo = NULL;
 	disassemble_info dinfo;
-	xref_type xrefs;
 	
 	printf("pspDis v%0.1f\n\n", PSPDISVER);
 	if (argc != 2) {
@@ -104,7 +98,7 @@ int main(int argc, char *argv[]) {
 				//dprintf("%d <= %d\n", sHeaders[i].nameIndex,sHeaders[i].size);
 				sectionStringTable = &elfData[sHeaders[i].offset];
 				//if our name is not .shstrtab then we're .strtab
-				if (strcmp((const char *)&sectionStringTable[sHeaders[i].nameIndex], ".shstrtab") != 0) {
+				if (strcmp(&sectionStringTable[sHeaders[i].nameIndex], ".shstrtab") != 0) {
 					//dprintf("we're not shstrtab (%s)\n", &sectionStringTable[sHeaders[i].nameIndex]);
 					elfStringTable = sectionStringTable;
 					sectionStringTable = NULL;
@@ -116,7 +110,7 @@ int main(int argc, char *argv[]) {
 
 	//determine name of executable
 	for (i = 0; i < header->numSectionHeaderEntries; i++) {
-		if (strcmp((const char *)&sectionStringTable[sHeaders[i].nameIndex], ".rodata.sceModuleInfo") == 0) {
+		if (strcmp(&sectionStringTable[sHeaders[i].nameIndex], ".rodata.sceModuleInfo") == 0) {
 			moduleInfo = (SceModuleInfo*)&elfData[sHeaders[i].offset];
 			printf("Module name: %s\n", moduleInfo->name);
 		}
@@ -125,18 +119,17 @@ int main(int argc, char *argv[]) {
 	//enumerate section headers
 	for (i = 0; i < header->numSectionHeaderEntries; i++) {
 		dprintf("Section %d: '%s' (%d bytes)\n", i, &sectionStringTable[sHeaders[i].nameIndex], sHeaders[i].size);
-		if (strcmp((const char *)&sectionStringTable[sHeaders[i].nameIndex], ".lib.stub") == 0) {
+		if (strcmp(&sectionStringTable[sHeaders[i].nameIndex], ".lib.stub") == 0) {
 			libStub = &elfData[sHeaders[i].offset];
-		} else if (strcmp((const char *)&sectionStringTable[sHeaders[i].nameIndex], ".lib.stub.btm") == 0) {
+		} else if (strcmp(&sectionStringTable[sHeaders[i].nameIndex], ".lib.stub.btm") == 0) {
 			libStubBtm = &elfData[sHeaders[i].offset];
-		} else if (strcmp((const char *)&sectionStringTable[sHeaders[i].nameIndex], ".rodata.sceResident") == 0) {
+		} else if (strcmp(&sectionStringTable[sHeaders[i].nameIndex], ".rodata.sceResident") == 0) {
 			sceResident = &elfData[sHeaders[i].offset];
-		} else if (strcmp((const char *)&sectionStringTable[sHeaders[i].nameIndex], ".rodata.sceNid") == 0) {
+		} else if (strcmp(&sectionStringTable[sHeaders[i].nameIndex], ".rodata.sceNid") == 0) {
 			sceNid = (u32*)&elfData[sHeaders[i].offset];
-		} else if (strcmp((const char *)&sectionStringTable[sHeaders[i].nameIndex], ".text") == 0) {
+		} else if (strcmp(&sectionStringTable[sHeaders[i].nameIndex], ".text") == 0) {
 			text = &elfData[sHeaders[i].offset];
 			textSize = sHeaders[i].size;
-			textSection = &sHeaders[i];
 		}
 	}
 	
@@ -162,48 +155,26 @@ int main(int argc, char *argv[]) {
 	//setup disasm struct
 	init_disassemble_info(&dinfo, stdout, (fprintf_ftype)fprintf);
 	dinfo.flavour = bfd_target_elf_flavour;
-	dinfo.arch = (bfd_architecture) bfd_mach_mips_allegrex;
+	dinfo.arch = bfd_mach_mips_allegrex;
 	dinfo.mach = bfd_mach_mips_allegrex;
-	disassemble_init_for_target(&dinfo);
 	
-	printf("data at 0x%08X, section vma is 0x%08X, length is %d\n", text, textSection->address, textSize);
-	dinfo.buffer = text;
-	dinfo.buffer_vma = textSection->address;
-	dinfo.buffer_length = textSize;
-
+	dinfo.read_memory_func = libopcodes_read_mem;
 	dinfo.print_address_func = libopcodes_print_addr;
 	//don't need these functions yet.
 	/*
+	dinfo.memory_error_func = libopcodes_mem_error;
 	dinfo.symbol_at_address_func = libopcodes_symbol_at_addr;
 	dinfo.symbol_is_valid = libopcodes_symbol_is_valid;
 	*/
 	int bytecount = 0;
 	while (bytecount < textSize) {
-		int increment = 0;
 		printf("\n0x%08X: ", bytecount);
 		dinfo.insn_info_valid = 0;
-		increment += print_insn_little_mips((bfd_vma)bytecount, &dinfo);
+		bytecount += print_insn_little_mips((bfd_vma)(u32)&text[bytecount], &dinfo);
 		if (dinfo.insn_info_valid != 0) {
-			if (dinfo.insn_type == dis_branch ||
-			    dinfo.insn_type == dis_condbranch ||
-			    dinfo.insn_type == dis_jsr ||
-			    dinfo.insn_type == dis_condjsr) {
-			    	//ignore xrefs to 0x00000000 unless they're straight to 0 or a relative jump to 0 (todo)
-			    	int instr = *(u32*)&text[bytecount];
-			    	if(dinfo.target != 0 || dinfo.target == 0 && (instr & 0x00FFFFFF) == 0) {
-					xrefs[dinfo.target].push_back(bytecount);
-				}
-			}
+			
 		}
-		bytecount += increment;
-	}
-	
-	//print xrefs
-	printf("\n\nxref report\n");
-	for (xref_type::iterator it = xrefs.begin(); it != xrefs.end(); ++it) {
-		printf("%d xrefs for addr 0x%08X\n", (*it).second.size(), (*it).first);
-		for(size_t i = 0; i < (*it).second.size(); i++)
-			printf("\t0x%08X\n", (*it).second[i]);
+//		printf("\ndisasm ate %d bytes\n", );
 	}
 	free(elfData);
 	fclose(in);

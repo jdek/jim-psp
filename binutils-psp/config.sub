@@ -253,7 +253,6 @@ case $basic_machine in
 	| mipsisa64sb1 | mipsisa64sb1el \
 	| mipsisa64sr71k | mipsisa64sr71kel \
 	| mipstx39 | mipstx39el \
-	| mipsallegrex | mipsallegrexel \
 	| mn10200 | mn10300 \
 	| msp430 \
 	| ns16k | ns32k \
@@ -327,7 +326,6 @@ case $basic_machine in
 	| mipsisa64sb1-* | mipsisa64sb1el-* \
 	| mipsisa64sr71k-* | mipsisa64sr71kel-* \
 	| mipstx39-* | mipstx39el-* \
-	| mipsallegrex-* | mipsallegrexel-* \
 	| mmix-* \
 	| msp430-* \
 	| none-* | np1-* | ns16k-* | ns32k-* \
@@ -666,10 +664,6 @@ case $basic_machine in
 	*mint | -mint[0-9]* | *MiNT | *MiNT[0-9]*)
 		basic_machine=m68k-atari
 		os=-mint
-		;;
-	psp)
-		basic_machine=mipsallegrexel-unknown
-		os=-elf
 		;;
 	mips3*-*)
 		basic_machine=`echo $basic_machine | sed -e 's/mips3/mips64/'`

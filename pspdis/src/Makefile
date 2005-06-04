@@ -4,17 +4,14 @@
 
 BIN  = ../pspdis.exe
 OBJS = util.o bfd_replacement.o libopcodes_helper.o pspdis.o 
-INCS = -I. -I../libopcodes
+INCS = -I. -I../libcodes
 LIBS =  -lopcodes -lintl
 LDFLAGS = -L../libopcodes
 CFLAGS = -O2 -g -c -Wall $(INCS)
 
 $(BIN) : $(OBJS)
-	g++ $(LDFLAGS) -o $(BIN) $(OBJS) $(LIBS)
-
-$(OBJS_DIR)%.o : %.cc
-	g++ $(CFLAGS) $< -o $@
-		
+	gcc $(LDFLAGS) -o $(BIN) $(OBJS) $(LIBS)
+	
 $(OBJS_DIR)%.o : %.c
 	gcc $(CFLAGS) $< -o $@
 
